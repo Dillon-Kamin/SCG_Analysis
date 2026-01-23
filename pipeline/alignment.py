@@ -8,7 +8,7 @@ import polars as pl
 def align_segments(
     segments_path: str,
     reference_paths: List[str],
-    fs: float = 500,
+    fs: float = 250,
     h: float = -0.0125,
     g: float = -0.0025,
     save: bool = False,

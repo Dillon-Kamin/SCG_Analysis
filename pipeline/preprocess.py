@@ -65,7 +65,7 @@ def filter_signal(
 def segment_signal(
     df: Optional[pl.DataFrame] = None,
     filepath: Optional[str] = None,
-    fs: float = 500,
+    fs: float = 250,
     distance: int = 150,
     prominence: float = 0.01,
     tolerance: float = 1.5,
@@ -155,7 +155,7 @@ def segment_signal(
 def create_reference_signal(
     segments: Optional[np.ndarray] = None,
     filepath: Optional[str] = None,
-    fs: float = 500,
+    fs: float = 250,
     output_dir: Optional[str] = None
 ) -> Tuple[pl.DataFrame, Optional[str]]:
     """

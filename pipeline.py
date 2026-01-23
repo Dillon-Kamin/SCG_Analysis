@@ -9,12 +9,12 @@ from pipeline.rf_model import train_rf_model, predict_rf_model, get_feature_impo
 
 # Default pipeline parameters
 DEFAULT_PARAMS = {
-    'fs': 500,
+    'fs': 250,
     'lowcut': 1.0,
-    'highcut': 150.0,
+    'highcut': 80.0,
     'filter_order': 2,
-    'dp_distance': 166,  # fs/3
-    'dp_prominence': 0.012,
+    'dp_distance': 83,  # fs/3
+    'dp_prominence': 0.018,
     'dp_tolerance': 1.5,
     'segment_width': 150,
     'averaging_window': 10,
@@ -384,21 +384,19 @@ if __name__ == "__main__":
     
     # File paths
     RAW_TRAINING_FILES = {
-        'center': [f"data/raw/center{i}.csv" for i in range(1, 6)],
-        'left': [f"data/raw/left{i}.csv" for i in range(1, 6)]
+        'active': [f"data/raw/excited_{i}.csv" for i in range(1, 6)],
+        'relaxed': [f"data/raw/relaxed_{i}.csv" for i in range(1, 7)]
     }
     
     REFERENCE_PATHS = [
-        *[f"data/references/center{i}_reference.csv" for i in range(1, 6)],
-        *[f"data/references/left{i}_reference.csv" for i in range(1, 6)]
+        f"data/raw/ref{i}.csv" for i in range(1, 2)
     ]
     
     MODEL_PATH = "models/sensor_classifier_v1.pkl"
     MODEL_NAME = "sensor_classifier_v1"
     
     TEST_FILES = [
-        "data/raw/center-test.csv",
-        "data/raw/left-test.csv"
+        "data/raw/relaxed_7.csv"
     ]
     
     # ========== PIPELINE EXECUTION ==========
@@ -407,9 +405,9 @@ if __name__ == "__main__":
         print("\nFULL pipeline (create references + train + predict)\n")
         
         # Create references from training files
-        raw_files = [f for files in RAW_TRAINING_FILES.values() for f in files]
-        references = create_references(raw_files)
-        
+        # raw_files = [f for files in RAW_TRAINING_FILES.values() for f in files]
+        references = create_references(REFERENCE_PATHS)
+
         # Prepare training data
         aligned_data = prepare_training_data(RAW_TRAINING_FILES, references)
         

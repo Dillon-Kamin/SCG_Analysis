@@ -12,11 +12,11 @@ from pipeline.alignment import align_segments
 from pipeline.rf_model import predict_rf_model
 
 # CONSTANTS
-Fs = 500
+Fs = 250
 FFT_skip = 40
 
 # Load raw data
-filepath = "data/raw/center-test.csv"
+filepath = "data/raw/excited_4.csv"
 df = read_device_csv(filepath, logging=False)
 df = df.with_columns(pl.Series("time", np.arange(df.height) / Fs))
 df = df.with_columns(pl.Series("z", df["z"] / 262144))
@@ -37,7 +37,7 @@ app.layout = html.Div([
         html.Label("Low cutoff (Hz): "),
         dcc.Input(id="lowcut", type="number", min=0.1, max=100, step=0.1, value=1, debounce=True),
         html.Label("High cutoff (Hz): "),
-        dcc.Input(id="highcut", type="number", min=10, max=200, step=1, value=150, debounce=True),
+        dcc.Input(id="highcut", type="number", min=10, max=200, step=1, value=120, debounce=True),
         html.Label("Filter order: "),
         dcc.Input(id="order", type="number", min=1, max=6, step=1, value=2, debounce=True),
         dcc.Graph(id="filtered-signal"),
