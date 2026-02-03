@@ -16,7 +16,7 @@ Fs = 250
 FFT_skip = 40
 
 # Load raw data
-filepath = "data/raw/excited_4.csv"
+filepath = "data/raw/relaxed_5.csv"
 df = read_device_csv(filepath, logging=False)
 df = df.with_columns(pl.Series("time", np.arange(df.height) / Fs))
 df = df.with_columns(pl.Series("z", df["z"] / 262144))
@@ -86,7 +86,7 @@ app.layout = html.Div([
             dcc.Input(
                 id="reference-paths",
                 type="text",
-                value=",".join([f"data/references/center{i}_reference.csv" for i in range(1, 6)] + [f"data/references/left{i}_reference.csv" for i in range(1, 6)]),
+                value="data/references/ref1_reference.csv",
                 style={"width": "80%"},
                 debounce=True
             ),

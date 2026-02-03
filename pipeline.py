@@ -11,13 +11,13 @@ from pipeline.rf_model import train_rf_model, predict_rf_model, get_feature_impo
 DEFAULT_PARAMS = {
     'fs': 250,
     'lowcut': 1.0,
-    'highcut': 80.0,
+    'highcut': 120.0,
     'filter_order': 2,
     'dp_distance': 83,  # fs/3
     'dp_prominence': 0.018,
     'dp_tolerance': 1.5,
     'segment_width': 150,
-    'averaging_window': 10,
+    'averaging_window': 2,
     'score_percentile_cutoff': 75.0
 }
 
@@ -384,7 +384,7 @@ if __name__ == "__main__":
     
     # File paths
     RAW_TRAINING_FILES = {
-        'active': [f"data/raw/excited_{i}.csv" for i in range(1, 6)],
+        'active': [f"data/raw/excited_{i}.csv" for i in range(2, 6)],
         'relaxed': [f"data/raw/relaxed_{i}.csv" for i in range(1, 7)]
     }
     
@@ -396,7 +396,7 @@ if __name__ == "__main__":
     MODEL_NAME = "sensor_classifier_v1"
     
     TEST_FILES = [
-        "data/raw/relaxed_7.csv"
+        "data/raw/excited_1.csv"
     ]
     
     # ========== PIPELINE EXECUTION ==========
