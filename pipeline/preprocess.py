@@ -61,6 +61,84 @@ def filter_signal(
 
     return pl.DataFrame({"z": z_filt}), output_path
 
+def _refine_ao_peak(
+    z: np.ndarray,
+    first_pass_peak: int,
+    local_search_radius: int = 25,
+    local_distance: int = 5,
+    similarity_threshold: float = 0.6,
+) -> int:
+    """
+    Refine a first-pass detected peak to land on the AO downpeak rather than MV.
+
+    The first-pass peak detection (with distance ~ IBI) reliably finds one peak
+    per beat, but may land on either the AO or MV downpeak when their amplitudes
+    are similar. This function performs a second-pass detection within a small
+    symmetric window around the first-pass peak to find up to three local
+    downpeaks, then:
+
+      1. Takes the top 2 by absolute amplitude from those candidates.
+      2. Checks whether they are similar enough in amplitude to be a genuine
+         AO/MV pair (ratio of smaller to larger >= similarity_threshold).
+      3. If yes, returns the earlier of the two (AO always precedes MV).
+      4. If no (only one dominant peak, or candidates too dissimilar), returns
+         the original first-pass peak unchanged.
+
+    Args:
+        z: Full filtered signal array.
+        first_pass_peak: Peak index from the first-pass find_peaks call.
+        local_search_radius: Half-width of the symmetric local search window
+            in samples. Default 25 gives a 50-sample window, safely spanning
+            the AO-MV gap at 400-500 Hz.
+        local_distance: Minimum distance (samples) between peaks in the second-
+            pass find_peaks call. Small (default 5) to allow detection of the
+            closely-spaced AO/MV pair.
+        similarity_threshold: Minimum ratio of smaller to larger peak amplitude
+            (both taken as absolute values) to treat two peaks as a genuine
+            AO/MV pair. Default 0.6.
+
+    Returns:
+        Refined peak index in global signal coordinates. Falls back to
+        first_pass_peak if the window is out of bounds, fewer than 2 peaks are
+        found, or the top 2 peaks fail the similarity check.
+    """
+    window_start = first_pass_peak - local_search_radius
+    window_end   = first_pass_peak + local_search_radius
+
+    # Bail out if window extends beyond signal boundaries
+    if window_start < 0 or window_end > len(z):
+        return first_pass_peak
+
+    local_signal = z[window_start:window_end]
+
+    # Second-pass: find downpeaks within local window, no prominence filter —
+    # let the similarity check do the discrimination
+    local_peaks, _ = find_peaks(-local_signal, distance=local_distance)
+
+    if len(local_peaks) < 2:
+        return first_pass_peak
+
+    # Convert to global indices
+    global_peaks = local_peaks + window_start
+
+    # Sort candidates by absolute amplitude (largest first), take top 3
+    sorted_by_amp = sorted(global_peaks, key=lambda p: abs(z[p]), reverse=True)
+    top_candidates = sorted_by_amp[:3]
+
+    # Apply similarity check to the top 2
+    top_two = sorted(top_candidates[:2], key=lambda p: abs(z[p]), reverse=True)
+    amp_larger  = abs(z[top_two[0]])
+    amp_smaller = abs(z[top_two[1]])
+
+    if amp_larger == 0:
+        return first_pass_peak
+
+    if amp_smaller / amp_larger >= similarity_threshold:
+        # Genuine AO/MV pair — return the earlier one (AO precedes MV)
+        return min(top_two)
+    else:
+        # Only one dominant peak — original first-pass peak is reliable
+        return first_pass_peak
 
 def segment_signal(
     df: Optional[pl.DataFrame] = None,
@@ -71,21 +149,50 @@ def segment_signal(
     tolerance: float = 1.5,
     segment_width: int = 150,
     averaging_window: int = 10,
+    ao_mv_refinement: bool = True,
+    local_search_radius: int = 25,
+    local_distance: int = 5,
+    similarity_threshold: float = 0.6,
     save: bool = False,
     output_dir: Optional[str] = None
 ) -> Tuple[np.ndarray, Optional[str]]:
     """
     Segment filtered signal around downward peaks (beats).
 
+    Uses a two-pass peak detection strategy to robustly anchor segments on the
+    AO downpeak rather than the MV downpeak when the two are similar in amplitude:
+
+      Pass 1 — Standard find_peaks with distance ~ IBI. Finds one candidate per
+               beat. May land on AO or MV when their amplitudes are close.
+
+      Pass 2 — For each first-pass peak, searches a small symmetric window
+               (local_search_radius samples either side) with a tight distance
+               constraint to detect both AO and MV candidates. If the top 2
+               peaks are sufficiently similar in amplitude (>= similarity_threshold),
+               the earlier one is chosen as the AO anchor. Otherwise the original
+               first-pass peak is kept.
+
+    This approach is robust to variable device sampling rates (400-500 Hz) because
+    it discriminates AO from MV by temporal ordering rather than amplitude or
+    fixed sample-count timing.
+
     Args:
         df: Polars DataFrame with 'z' column (filtered signal). Provide either df or filepath.
         filepath: Path to CSV with filtered signal (column 'z'). Alternative to df.
         fs: Sampling frequency (Hz).
-        distance: Minimum distance between peaks (samples).
-        prominence: Minimum prominence of detected peaks.
-        tolerance: Stddev multiplier for outlier rejection.
+        distance: Minimum distance between peaks in first-pass detection (samples).
+        prominence: Minimum prominence of detected peaks in first-pass detection.
+        tolerance: IQR multiplier for outlier rejection of first-pass peak amplitudes.
         segment_width: Width (in samples) for each segment (half width applied around peak).
         averaging_window: If >0, average each segment with its neighbors.
+        ao_mv_refinement: If True, apply second-pass AO/MV anchor refinement.
+            Set False to reproduce original behaviour exactly.
+        local_search_radius: Half-width of the local search window for second-pass
+            detection (samples). Default 25 gives a 50-sample window.
+        local_distance: Minimum distance between peaks in second-pass detection
+            (samples). Default 5 allows detection of closely-spaced AO/MV pairs.
+        similarity_threshold: Minimum amplitude ratio (smaller/larger) for two
+            local peaks to be treated as a genuine AO/MV pair. Default 0.6.
         save: If True, save segments to .npy file.
         output_dir: Directory to save segments. If None, uses ../data/segmented
 
@@ -103,12 +210,12 @@ def segment_signal(
 
     output_path = None
 
-    # Detect downward peaks
+    # --- Pass 1: one candidate peak per beat ---
     peaks, _ = find_peaks(-z, distance=distance, prominence=prominence)
     if len(peaks) == 0:
         return np.array([]), output_path
 
-    # Outlier removal
+    # Outlier removal on first-pass amplitudes (rejects genuinely bad beats)
     peak_vals = z[peaks]
     q1, q3 = np.percentile(peak_vals, [25, 75])
     iqr = q3 - q1
@@ -118,9 +225,20 @@ def segment_signal(
     if len(filtered_peaks) == 0:
         return np.array([]), output_path
 
-    # Segment around peaks
-    half_width = segment_width // 2
+    # --- Pass 2: refine each peak to land on AO rather than MV ---
+    if ao_mv_refinement:
+        filtered_peaks = [
+            _refine_ao_peak(
+                z, p,
+                local_search_radius=local_search_radius,
+                local_distance=local_distance,
+                similarity_threshold=similarity_threshold
+            )
+            for p in filtered_peaks
+        ]
 
+    # --- Segmentation around refined anchors ---
+    half_width = segment_width // 2
     segments = np.array([
         z[p - half_width:p + half_width]
         for p in filtered_peaks
@@ -150,7 +268,6 @@ def segment_signal(
         np.save(output_path, segments)
 
     return segments, output_path
-
 
 def create_reference_signal(
     segments: Optional[np.ndarray] = None,

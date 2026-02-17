@@ -202,7 +202,7 @@ def _align_to_reference(
             if ref['direction'] == seg['direction']:
                 dx = ref['time'] - seg['time']
                 dy = ref['amplitude'] - seg['amplitude']
-                dist = np.sqrt(dx * dx + dy * dy)
+                dist = np.sqrt(dx * dx + 2*(dy * dy))
                 match_score = -dist
             else:
                 match_score = -np.inf

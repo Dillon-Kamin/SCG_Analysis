@@ -15,12 +15,12 @@ def train_rf_model(
     training_data: Dict[str, List[str]],
     test_data: Optional[Dict[str, List[str]]] = None,
     score_percentile_cutoff: float = 75.0,
-    test_size: float = 0.2,
+    test_size: float = 0.01,
     random_state: int = 42,
     n_estimators: int = 200,
-    max_depth: int = 15,
-    min_samples_split: int = 5,
-    min_samples_leaf: int = 2,
+    max_depth: int = 5,
+    min_samples_split: int = 10,
+    min_samples_leaf: int = 5,
     save_model: bool = True,
     model_path: Optional[str] = None,
     output_dir: Optional[str] = None
@@ -86,6 +86,18 @@ def train_rf_model(
     X_train = np.vstack(X_train_list)
     y_train = np.concatenate(y_train_list)
     
+    df_debug = pd.DataFrame(X_train, columns=feature_names)
+    df_debug['label'] = [class_names[y] for y in y_train]
+
+    print("\nPer-class feature means (manually chosen features):")
+    top_feats = ['Vector_7_damp', 'Vector_8_damp', 'Vector_2_damp', 
+                'Vector_1_damp', 'Vector_7_dt', 'Feature_0_amp']
+    top_feats = [f for f in top_feats if f in df_debug.columns]
+    print(df_debug.groupby('label')[top_feats].mean().T.to_string())
+
+    print("\nPer-class feature stds:")
+    print(df_debug.groupby('label')[top_feats].std().T.to_string())
+
     # Handle test data
     if test_data is not None:
         print(f"\nExtracting features from test data...")

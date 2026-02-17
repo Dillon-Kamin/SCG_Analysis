@@ -39,35 +39,30 @@ from pipeline.feature_extraction import extract_vectorized_features
 CONFIG = {
     # Input files
     'files': [
-        'data/raw/excited_1.csv',
-        'data/raw/excited_2.csv',
-        'data/raw/excited_3.csv',
-        'data/raw/excited_4.csv',
-        'data/raw/excited_5.csv',
-        'data/raw/relaxed_1.csv',
-        'data/raw/relaxed_2.csv',
-        'data/raw/relaxed_3.csv',
-        'data/raw/relaxed_4.csv',
-        'data/raw/relaxed_5.csv',
-        'data/raw/relaxed_6.csv',
+        'data/raw/engage1.csv',
+        'data/raw/engage2.csv',
+        'data/raw/engage3.csv',
+        'data/raw/engage4.csv',
+        'data/raw/engage5.csv',
+        'data/raw/relax4.csv',
+        'data/raw/relax5.csv',
     ],
     'references': [
-        'data/references/ref1_reference.csv',
+        'data/references/engage5_reference.csv',
     ],
     
     # Labels mapping (filename -> label) - set to None if using filenames directly
     'labels': {
-        'excited_1.csv': 'excited',
-        'excited_2.csv': 'excited',
-        'excited_3.csv': 'excited',
-        'excited_4.csv': 'excited',
-        'excited_5.csv': 'excited',
-        'relaxed_1.csv': 'relaxed',
-        'relaxed_2.csv': 'relaxed',
-        'relaxed_3.csv': 'relaxed',
-        'relaxed_4.csv': 'relaxed',
-        'relaxed_5.csv': 'relaxed',
-        'relaxed_6.csv': 'relaxed',
+        'engage1.csv': 'engaged1',
+        'engage2.csv': 'engaged',
+        'engage3.csv': 'engaged',
+        'engage4.csv': 'engaged',
+        'engage5.csv': 'engaged5',
+        'relax1.csv': 'relaxed',
+        'relax2.csv': 'relaxed',
+        'relax3.csv': 'relaxed',
+        'relax4.csv': 'relaxed',
+        'relax5.csv': 'relaxed',
     },
     
     # Clustering parameters
@@ -89,15 +84,15 @@ CONFIG = {
     'max_clusters_elbow': 15,
     
     # Pipeline parameters
-    'fs': 250,
-    'lowcut': 1.0,
-    'highcut': 120.0,
+    'fs': 500,
+    'lowcut': 2.0,
+    'highcut': 50.0,
     'filter_order': 2,
-    'dp_distance': 83,
-    'dp_prominence': 0.018,
+    'dp_distance': 167,
+    'dp_prominence': 0.02,
     'dp_tolerance': 1.5,
-    'segment_width': 150,
-    'averaging_window': 2,
+    'segment_width': 300,
+    'averaging_window': 10,
     'score_percentile_cutoff': 75.0,
 }
 
