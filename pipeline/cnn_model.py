@@ -18,21 +18,17 @@ class SCGDataset(Dataset):
     """
     Dataset of raw SCG beat segments for 1D CNN classification.
 
-    Loads aligned segment tuples, applies an absolute score threshold to
-    filter low-quality beats, crops each segment asymmetrically around the
-    AO anchor (discarding uninformative pre-AO samples), and returns a
-    (waveform, label) pair.
+    Loads aligned segment tuples, applies score threshold filtering to
+    discard low-quality beats, crops each segment asymmetrically around the
+    AO anchor, and returns (waveform, label) pairs.
 
     Args:
         segments:       List of (time, amplitude, features, score, ref_idx) tuples.
         label:          Integer class label for all segments in this dataset.
-        score_threshold: Absolute upper bound on alignment score. Segments with
-                         score >= threshold are discarded. None keeps all segments.
-        crop_start:     First sample index to keep (samples before this are dropped).
-                        Default 100 discards the left third of a 300-sample segment,
-                        keeping the physiologically rich post-AO region.
-        crop_end:       Last sample index (exclusive). Default 300 keeps everything
-                        to the right of crop_start.
+        score_threshold: Upper bound on alignment score. Segments with score >=
+                         threshold are discarded. None keeps all segments.
+        crop_start:     First sample index to keep (samples before are dropped).
+        crop_end:       Last sample index (exclusive).
     """
     def __init__(
         self,
@@ -135,7 +131,7 @@ class SCGConv1D(nn.Module):
 
 
 # ---------------------------------------------------------------------------
-# Score threshold calibration
+# Score threshold helpers
 # ---------------------------------------------------------------------------
 
 def calibrate_score_threshold(
@@ -146,16 +142,13 @@ def calibrate_score_threshold(
     Derive an absolute alignment score threshold from a reference file.
 
     Computes the given percentile of alignment scores from the reference
-    recording (which should be a clean, well-aligned file). This value is
-    saved alongside the model and applied consistently at both training and
-    prediction time, replacing the per-file relative cutoff used previously.
+    recording. This value is saved alongside the model and applied at both
+    training and prediction time, ensuring consistent quality filtering.
 
     Args:
-        reference_aligned_path: Path to .npy aligned segments from the
-                                 reference recording.
+        reference_aligned_path: Path to .npy aligned segments from reference.
         percentile: Score percentile to use as cutoff. Default 75 keeps
-                    the best 75% of the reference file's beats as the
-                    quality bar.
+                    the best 75% of reference beats as the quality bar.
 
     Returns:
         Absolute score threshold (float). Beats with score >= this value
@@ -164,8 +157,26 @@ def calibrate_score_threshold(
     results = list(np.load(reference_aligned_path, allow_pickle=True))
     scores = np.array([float(score) for _, _, _, score, _ in results])
     threshold = float(np.percentile(scores, percentile))
-    print(f"Score threshold calibrated at {percentile}th percentile: {threshold:.4f}")
+    print(f"Absolute threshold calibrated at {percentile}th percentile: {threshold:.4f}")
     return threshold
+
+
+def get_relative_threshold(segments: List[Tuple], percentile: float) -> float:
+    """
+    Compute a relative score threshold from a segment list.
+
+    Used when use_absolute_threshold=False to filter each file by its own
+    score distribution (original RF-style behavior).
+
+    Args:
+        segments: List of aligned segment tuples.
+        percentile: Score percentile cutoff.
+
+    Returns:
+        Threshold value for this specific file.
+    """
+    scores = np.array([float(score) for _, _, _, score, _ in segments])
+    return float(np.percentile(scores, percentile))
 
 
 # ---------------------------------------------------------------------------
@@ -176,7 +187,8 @@ def train_cnn_model(
     training_data: Dict[str, List[str]],
     reference_aligned_path: str,
     score_percentile: float = 75.0,
-    crop_start: int = 0,
+    use_absolute_threshold: bool = True,
+    crop_start: int = 100,
     crop_end: int = 300,
     n_epochs: int = 50,
     batch_size: int = 32,
@@ -193,9 +205,13 @@ def train_cnn_model(
     """
     Train a 1D CNN on raw SCG beat waveforms.
 
-    Quality filtering uses an absolute score threshold derived from the
-    reference file rather than a per-file percentile, ensuring consistent
-    filtering between training and prediction.
+    Score filtering behavior:
+    - use_absolute_threshold=True (default): Derives a threshold from the
+      reference file and applies it consistently across all training files
+      and at prediction time. Recommended for consistency.
+    - use_absolute_threshold=False: Computes a separate percentile threshold
+      per training file (RF-style). Useful for A/B comparison but less
+      consistent between sessions.
 
     Class imbalance is handled via WeightedRandomSampler so the model sees
     balanced batches regardless of unequal segment counts per class.
@@ -203,9 +219,11 @@ def train_cnn_model(
     Args:
         training_data:          Dict mapping class name to list of aligned .npy paths.
         reference_aligned_path: Path to aligned .npy for the reference recording.
-                                 Used to calibrate the absolute score threshold.
-        score_percentile:       Percentile of reference scores to use as threshold.
-        crop_start:             First sample to keep from each segment (pre-AO discard).
+                                 Used to calibrate absolute threshold if enabled.
+        score_percentile:       Percentile of scores to use as cutoff.
+        use_absolute_threshold: If True, use absolute threshold from reference.
+                                 If False, use per-file relative percentile.
+        crop_start:             First sample to keep from each segment.
         crop_end:               Last sample to keep (exclusive).
         n_epochs:               Training epochs.
         batch_size:             Batch size.
@@ -227,8 +245,12 @@ def train_cnn_model(
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     print(f"Device: {device}")
 
-    # Calibrate absolute score threshold from reference file
-    score_threshold = calibrate_score_threshold(reference_aligned_path, score_percentile)
+    # Calibrate threshold if using absolute mode
+    if use_absolute_threshold:
+        absolute_threshold = calibrate_score_threshold(reference_aligned_path, score_percentile)
+    else:
+        absolute_threshold = None
+        print(f"Using relative (per-file) {score_percentile}th percentile threshold")
 
     class_names = list(training_data.keys())
     class_to_idx = {name: idx for idx, name in enumerate(class_names)}
@@ -251,9 +273,16 @@ def train_cnn_model(
                 continue
 
             results = list(np.load(path, allow_pickle=True))
+
+            # Determine threshold for this file
+            if use_absolute_threshold:
+                threshold = absolute_threshold
+            else:
+                threshold = get_relative_threshold(results, score_percentile)
+
             ds = SCGDataset(
                 results, class_idx,
-                score_threshold=score_threshold,
+                score_threshold=threshold,
                 crop_start=crop_start,
                 crop_end=crop_end,
             )
@@ -375,15 +404,17 @@ def train_cnn_model(
             model_path = os.path.join(output_dir, "cnn_model.pkl")
 
         model_data = {
-            'model_state':      model.state_dict(),
-            'class_names':      class_names,
-            'class_to_idx':     class_to_idx,
-            'input_width':      input_width,
-            'crop_start':       crop_start,
-            'crop_end':         crop_end,
-            'score_threshold':  score_threshold,
-            'dropout_conv':     dropout_conv,
-            'dropout_fc':       dropout_fc,
+            'model_state':             model.state_dict(),
+            'class_names':             class_names,
+            'class_to_idx':            class_to_idx,
+            'input_width':             input_width,
+            'crop_start':              crop_start,
+            'crop_end':                crop_end,
+            'score_threshold':         absolute_threshold,
+            'score_percentile':        score_percentile,
+            'use_absolute_threshold':  use_absolute_threshold,
+            'dropout_conv':            dropout_conv,
+            'dropout_fc':              dropout_fc,
         }
         joblib.dump(model_data, model_path)
         output_path = model_path
@@ -404,8 +435,8 @@ def predict_cnn_model(
     """
     Run beat-by-beat prediction using a trained CNN.
 
-    Uses the absolute score threshold saved at training time — no per-file
-    percentile recomputation.
+    Uses the threshold mode (absolute or relative) that was saved at training
+    time for consistency.
 
     Args:
         model_path:    Path to saved model .pkl file.
@@ -422,16 +453,33 @@ def predict_cnn_model(
         return (None, None, None)
 
     model_data = joblib.load(model_path)
-    class_names     = model_data['class_names']
-    input_width     = model_data['input_width']
-    crop_start      = model_data['crop_start']
-    crop_end        = model_data['crop_end']
-    score_threshold = model_data['score_threshold']
-    dropout_conv    = model_data['dropout_conv']
-    dropout_fc      = model_data['dropout_fc']
+    class_names            = model_data['class_names']
+    input_width            = model_data['input_width']
+    crop_start             = model_data['crop_start']
+    crop_end               = model_data['crop_end']
+    dropout_conv           = model_data['dropout_conv']
+    dropout_fc             = model_data['dropout_fc']
+    use_absolute_threshold = model_data.get('use_absolute_threshold', True)
+    score_threshold        = model_data.get('score_threshold', None)
+    score_percentile       = model_data.get('score_percentile', 75.0)
 
     print(f"Model loaded. Classes: {class_names}")
-    print(f"Score threshold (absolute): {score_threshold:.4f}")
+
+    # Load results
+    if aligned_data is not None:
+        results = aligned_data
+    elif aligned_path is not None:
+        results = list(np.load(aligned_path, allow_pickle=True))
+    else:
+        raise ValueError("Either aligned_data or aligned_path must be provided.")
+
+    # Determine threshold based on saved mode
+    if use_absolute_threshold:
+        threshold = score_threshold
+        print(f"Using absolute threshold: {threshold:.4f}")
+    else:
+        threshold = get_relative_threshold(results, score_percentile)
+        print(f"Using relative {score_percentile}th percentile threshold: {threshold:.4f}")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -444,18 +492,10 @@ def predict_cnn_model(
     model.load_state_dict(model_data['model_state'])
     model.eval()
 
-    # Load results
-    if aligned_data is not None:
-        results = aligned_data
-    elif aligned_path is not None:
-        results = list(np.load(aligned_path, allow_pickle=True))
-    else:
-        raise ValueError("Either aligned_data or aligned_path must be provided.")
-
-    # Build dataset using saved absolute threshold
+    # Build dataset
     ds = SCGDataset(
-        results, label=0,          # label unused at prediction time
-        score_threshold=score_threshold,
+        results, label=0,
+        score_threshold=threshold,
         crop_start=crop_start,
         crop_end=crop_end,
     )

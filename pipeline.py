@@ -29,11 +29,12 @@ DEFAULT_PARAMS = {
     'local_distance': 5,
     'similarity_threshold': 0.6,
 
-    # Alignment quality (RF only — CNN uses absolute threshold)
+    # Alignment quality
     'score_percentile_cutoff': 75.0,
 
     # CNN-specific
-    'crop_start': 100,            # discard uninformative pre-AO samples
+    'use_absolute_threshold': False,  # If True, CNN uses reference-aligned path to set an absolute score threshold. If False, uses percentile cutoff like RF.
+    'crop_start': 0,            # discard uninformative pre-AO samples
     'crop_end': 300,
     'n_epochs': 50,
     'batch_size': 32,
@@ -270,6 +271,7 @@ def train_model(
             training_data=training_data,
             reference_aligned_path=reference_aligned_path,
             score_percentile=params['score_percentile_cutoff'],
+            use_absolute_threshold=params['use_absolute_threshold'],
             crop_start=params['crop_start'],
             crop_end=params['crop_end'],
             n_epochs=params.get('n_epochs', 50),
@@ -445,10 +447,16 @@ def evaluate_model(
         print(f"  Classes:         {model_data['class_names']}")
         print(f"  Input width:     {model_data['input_width']} samples  "
               f"[{model_data['crop_start']}:{model_data['crop_end']}]")
-        print(f"  Score threshold: {model_data['score_threshold']:.4f}")
+        
+        use_abs = model_data.get('use_absolute_threshold', True)
+        if use_abs and model_data.get('score_threshold') is not None:
+            print(f"  Score threshold: {model_data['score_threshold']:.4f} (absolute)")
+        else:
+            percentile = model_data.get('score_percentile', 75.0)
+            print(f"  Score threshold: {percentile}th percentile (relative per-file)")
+        
         print(f"\n{'=' * 70}\n")
         return None
-
 
 # ---------------------------------------------------------------------------
 # Entry point
@@ -458,11 +466,11 @@ if __name__ == "__main__":
 
     # ========== CONFIGURATION ==========
     MODE       = "full"    # "full" | "train" | "predict"
-    MODEL_TYPE = "rf"     # "cnn"  | "rf"
-
+    MODEL_TYPE = "cnn"     # "cnn"  | "rf"
+    
     RAW_TRAINING_FILES = {
-        'engaged': [f"data/raw/engage{i}.csv" for i in range(2, 5)],
-        'relaxed': [f"data/raw/relax{i}.csv"  for i in range(4, 6)],
+        'engaged': [f"data/raw/engage{i}.csv" for i in range(2, 6)],
+        'relaxed': [f"data/raw/relax{i}.csv"  for i in range(1, 6)],
     }
 
     # File used to build the reference signal AND calibrate the score threshold
