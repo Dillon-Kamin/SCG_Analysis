@@ -34,21 +34,22 @@ def extract_vectorized_features(
        mixing units (seconds vs amplitude), which would make angles sensitive
        to sampling rate and sensor gain rather than physiology.
 
-    3. Interval features (all pairwise time differences between features)
+    3. Interval features (pairwise time differences, excluding pairs with Feature 0)
        - 'Interval_I_J_dt': Time from Feature I to Feature J (seconds),
-                             for all unique pairs (I, J) where I < J,
-                             across features 0-10. Gives 55 interval columns.
+                             for all unique pairs (I, J) where I < J and I ≠ 0,
+                             across features 1-10. Gives 45 interval columns.
+                             (Pairs involving 0 are excluded as they duplicate Vector features)
 
-    4. Pairwise amplitude difference features (all pairs, same set as group 3)
+    4. Pairwise amplitude difference features (same pair set as group 3)
        - 'Amp_I_J_damp': Amplitude of Feature J minus amplitude of Feature I,
-                          for all unique pairs (I, J) where I < J.
-                          Gives 55 amplitude difference columns.
+                          for all unique pairs (I, J) where I < J and I ≠ 0.
+                          Gives 45 amplitude difference columns.
        Together with group 3, these encode inter-feature slope information
        (e.g. the rise from Feature 6 to Feature 7) without dividing units.
        The RF can combine dt and damp implicitly to learn slope relationships,
        or use them independently if one dimension is more informative.
 
-    Total columns: 1 + 20 + 55 + 55 = 131.
+    Total columns: 1 + 20 + 45 + 45 = 111.
 
     Only segments with alignment scores below the percentile cutoff are
     included. Segments without Feature 0 are skipped.
@@ -87,7 +88,8 @@ def extract_vectorized_features(
     cutoff = np.percentile(scores, score_percentile_cutoff)
 
     # Pre-compute all pairwise combinations once
-    pair_combinations = list(combinations(ACTIVE_FEATURES, 2))  # 55 pairs for 0-10
+    # Exclude pairs (0, X) since those are already in Vector features
+    pair_combinations = [(i, j) for i, j in combinations(ACTIVE_FEATURES, 2) if i != 0]
 
     feature_rows = []
 

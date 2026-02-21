@@ -39,8 +39,6 @@ from pipeline.feature_extraction import extract_vectorized_features
 CONFIG = {
     # Input files
     'files': [
-        'data/raw/engage1.csv',
-        'data/raw/engage2.csv',
         'data/raw/engage3.csv',
         'data/raw/engage4.csv',
         'data/raw/engage5.csv',
@@ -48,16 +46,16 @@ CONFIG = {
         'data/raw/relax5.csv',
     ],
     'references': [
-        'data/references/engage5_reference.csv',
+        'data/references/test2_reference.csv',
     ],
     
     # Labels mapping (filename -> label) - set to None if using filenames directly
     'labels': {
-        'engage1.csv': 'engaged1',
+        'engage1.csv': 'engaged',
         'engage2.csv': 'engaged',
         'engage3.csv': 'engaged',
         'engage4.csv': 'engaged',
-        'engage5.csv': 'engaged5',
+        'engage5.csv': 'engaged',
         'relax1.csv': 'relaxed',
         'relax2.csv': 'relaxed',
         'relax3.csv': 'relaxed',
@@ -92,7 +90,7 @@ CONFIG = {
     'dp_prominence': 0.02,
     'dp_tolerance': 1.5,
     'segment_width': 300,
-    'averaging_window': 10,
+    'averaging_window': 7,
     'score_percentile_cutoff': 75.0,
 }
 
@@ -607,6 +605,28 @@ def run_clustering(config: Dict):
     X_raw = feats[feature_cols].fillna(feats[feature_cols].mean())
     X_scaled = scaler.transform(X_raw.values)
     X_plot = pca_viz.fit_transform(X_scaled)
+    
+    # Print PC loadings
+    print(f"\nPCA for visualization: {X_scaled.shape[1]} features → 2 components")
+    print(f"Explained variance: PC1={pca_viz.explained_variance_ratio_[0]:.3f}, "
+          f"PC2={pca_viz.explained_variance_ratio_[1]:.3f}, "
+          f"Total={pca_viz.explained_variance_ratio_.sum():.3f}")
+    
+    print("\nTop 10 feature loadings for PC1:")
+    pc1_loadings = pd.DataFrame({
+        'feature': feature_cols,
+        'loading': pca_viz.components_[0]
+    }).sort_values('loading', key=abs, ascending=False).head(10)
+    for idx, row in pc1_loadings.iterrows():
+        print(f"  {row['feature']:30s} : {row['loading']:>7.4f}")
+    
+    print("\nTop 10 feature loadings for PC2:")
+    pc2_loadings = pd.DataFrame({
+        'feature': feature_cols,
+        'loading': pca_viz.components_[1]
+    }).sort_values('loading', key=abs, ascending=False).head(10)
+    for idx, row in pc2_loadings.iterrows():
+        print(f"  {row['feature']:30s} : {row['loading']:>7.4f}")
     
     # Prepare comparison data
     comparison_type = config.get('comparison_coloring', 'filenames')
